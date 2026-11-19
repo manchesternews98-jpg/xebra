@@ -300,7 +300,7 @@ For a claim on Solana where the recipient's USDC account must be opened, also pa
 
 ## Errors
 
-Every failure is thrown as `XebraApiError`. Its `code` is stable and safe to branch on; its
+Every failure is thrown as `XebraApiError` (aborting a signal rejects with the signal's reason instead). Its `code` is stable and safe to branch on; its
 `detail` is a sentence written for a person.
 
 ```ts twoslash
@@ -329,7 +329,7 @@ try {
     },
     code: {
       type: 'ApiErrorCode | "network_error" | "timeout" | "invalid_response"',
-      description: 'Stable. The API codes are listed in [the API overview](/docs/api).',
+      description: 'Stable. The API codes are listed on [Errors](/docs/errors).',
       required: true,
     },
     detail: { type: 'string', description: 'A sentence for a person.', required: true },
