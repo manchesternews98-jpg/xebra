@@ -20,7 +20,7 @@ served as `application/problem+json`:
 - `code` is stable. Branch on it, not on `title` or `detail`.
 - `detail` is a sentence written for a person. You can show it to your user as it is.
 - `type` is the page for that code, on this site.
-- Some codes add fields, such as `minimum`, `maximum`, `have`, `need`, `total` and `limit`.
+- Some codes add fields, such as `minimum`, `maximum`, `have`, `need`, `total`, `limit` and `needs`.
   Amounts are decimal strings of USDC, like everywhere else in the API.
 
 The SDK throws these as `XebraApiError`, with the extra fields on `err.extra`:
