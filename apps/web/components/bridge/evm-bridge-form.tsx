@@ -91,6 +91,15 @@ import { useBeneficiaries } from "./use-beneficiaries";
  */
 const CLAIM_GRACE_MS = 10 * 60_000;
 
+/** Stop polling after ~30 minutes without progress. */
+const POLL_CAP_MS = 30 * 60_000;
+
+/** How many consecutive status poll failures before alerting the user. */
+const CONSECUTIVE_POLL_FAILURES_THRESHOLD = 5;
+
+/** Backoff interval when consecutive poll failures occur. */
+const POLL_BACKOFF_MS = 30_000;
+
 /** The speed a route actually has: Fast only where the chain offers it and Circle is quoting it. */
 function tierFor(health: CircleHealth | null, source: EvmChain, speed: Speed): FeeTier | null {
   const tiers = health?.tiers;
@@ -173,6 +182,8 @@ export function EvmBridgeForm({
   const [sent, setSent] = useState<Sent | null>(null);
   const [reverted, setReverted] = useState(false);
   const [delivery, setDelivery] = useState<DeliveryView | null>(null);
+  const [pollError, setPollError] = useState<string | null>(null);
+  const [stalled, setStalled] = useState(false);
 
   const busy = submitting || Boolean(txHash);
   useEffect(() => {
@@ -363,22 +374,51 @@ export function EvmBridgeForm({
   useEffect(() => {
     if (!txHash || !sent || reverted) {
       setDelivery(null);
+      setPollError(null);
+      setStalled(false);
       return;
     }
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout>;
+    let consecutiveFailures = 0;
 
     const poll = async () => {
       const result = await getDelivery(txHash, source.cctpDomainId);
       if (cancelled) return;
-      setDelivery(result);
+
+      if (result.status === "known") {
+        consecutiveFailures = 0;
+        setPollError(null);
+        setDelivery(result);
+      } else {
+        consecutiveFailures += 1;
+        if (consecutiveFailures >= CONSECUTIVE_POLL_FAILURES_THRESHOLD) {
+          setPollError("can't reach the status service");
+        }
+        setDelivery(result);
+      }
+
       const waited = Date.now() - sent.at;
       const settled =
         result.status === "known" &&
         (result.state === "delivered" ||
           result.state === "failed" ||
           (result.state === "claimable" && waited >= CLAIM_GRACE_MS));
-      if (!settled) timer = setTimeout(poll, waited < 120_000 ? 5_000 : 15_000);
+
+      if (settled) return;
+
+      if (waited >= POLL_CAP_MS) {
+        setStalled(true);
+        return;
+      }
+
+      const delay =
+        consecutiveFailures >= CONSECUTIVE_POLL_FAILURES_THRESHOLD
+          ? POLL_BACKOFF_MS
+          : waited < 120_000
+            ? 5_000
+            : 15_000;
+      timer = setTimeout(poll, delay);
     };
     void poll();
 
@@ -555,6 +595,8 @@ export function EvmBridgeForm({
     setSent(null);
     setReverted(false);
     setSubmitError(null);
+    setPollError(null);
+    setStalled(false);
   }
 
   const receiptRoute: ReceiptRoute | undefined =
@@ -804,12 +846,43 @@ export function EvmBridgeForm({
             </Button>
           </div>
         ) : txHash && sent ? (
-          <SubmittedNotice
-            txHash={txHash}
-            delivery={shownDelivery}
-            destination={sent.destination}
-            {...(receiptRoute ? { route: receiptRoute } : {})}
-          />
+          <>
+            <SubmittedNotice
+              txHash={txHash}
+              delivery={shownDelivery}
+              destination={sent.destination}
+              {...(receiptRoute ? { route: receiptRoute } : {})}
+            />
+            {pollError && !stalled && (
+              <Notice tone="alarm" title={pollError} className="mt-3">
+                We can&rsquo;t reach the status service right now. Your transfer is not affected;
+                check {sent.destination.name} for the USDC, or try again shortly.
+              </Notice>
+            )}
+            {stalled && (
+              <Notice tone="info" title="Still waiting for delivery" className="mt-3">
+                <p>
+                  {shownDelivery?.status === "known" && shownDelivery.state === "forwarding"
+                    ? `Circle is delivering to ${sent.destination.name}.`
+                    : "Waiting for Circle to attest the transfer."}
+                </p>
+                <p className="mt-1.5">
+                  You can track or complete the transfer on the{" "}
+                  <a
+                    href={
+                      receiptRoute?.claimHref ??
+                      `/claim?tx=${encodeURIComponent(txHash)}&src=${source.cctpDomainId}`
+                    }
+                    className="underline underline-offset-2 hover:text-bone"
+                  >
+                    claim page
+                  </a>
+                  . If you sped up or cancelled this in your wallet, look up the new transaction
+                  hash on the claim page.
+                </p>
+              </Notice>
+            )}
+          </>
         ) : (
           <>
             <Button
