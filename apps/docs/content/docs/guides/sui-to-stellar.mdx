@@ -200,6 +200,10 @@ recipient the burn names, and anyone can submit it.
 
 ### The burn landed but the mint did not
 
+Xebra's relayer finishes Sui to Stellar on its own: the first poll after Circle attests the burn
+hands it over, so a `needs_claim` is normally brief. Keep polling first. Claim it yourself only when
+the relayer has not finished it (`reason` says why it refused, or it stays `needs_claim`).
+
 Tracking stays at `needs_claim` while the USDC waits to be minted. It is attested, it still pays the
 recipient the burn named, and finishing it costs only the destination's network fee. On Sui `claimUrl`
 is null: there is no claim page for this route, so finish it with
